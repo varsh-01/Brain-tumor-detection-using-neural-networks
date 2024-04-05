@@ -1,0 +1,435 @@
+classdef app1 < matlab.apps.AppBase
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                   matlab.ui.Figure
+        TabGroup                   matlab.ui.container.TabGroup
+        Tab                        matlab.ui.container.Tab
+        DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel  matlab.ui.control.Label
+        BRAINTUMOURDETECTIONANDANALYSISLabel  matlab.ui.control.Label
+        COMPUTERSCIENCEANDENGINEERINGLabel  matlab.ui.control.Label
+        JERUSALEMCOLLEGEOFENGNEERINGLabel  matlab.ui.control.Label
+        Image                      matlab.ui.control.Image
+        CNNANDSVMTab               matlab.ui.container.Tab
+        INPUTIMAGEButton           matlab.ui.control.Button
+        BRAINTUMORDETECTIONUSINGCNNANDSVMLabel  matlab.ui.control.Label
+        Image2                     matlab.ui.control.Image
+        CNNANDMKKMCTab             matlab.ui.container.Tab
+        InputImageButton           matlab.ui.control.Button
+        Image3                     matlab.ui.control.Image
+        ComparitiveAnalysisTab     matlab.ui.container.Tab
+        ComparitiveAnalysisButton  matlab.ui.control.Button
+        Image4                     matlab.ui.control.Image
+        ContextMenu2               matlab.ui.container.ContextMenu
+        Menu_2                     matlab.ui.container.Menu
+        Menu2_2                    matlab.ui.container.Menu
+    end
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: INPUTIMAGEButton
+        function INPUTIMAGEButtonPushed(app, event)
+           clc
+close all
+clear all
+
+%% Input
+[I,path]=uigetfile('*.jpg','select a input image');
+str=strcat(path,I);
+s=imread(str);
+
+figure;
+imshow(s);
+title('Input image','FontSize',20);
+
+%% Filter
+num_iter = 10;
+    delta_t = 1/7;
+    kappa = 15;
+    option = 2;
+    disp('Preprocessing image please wait . . .');
+    inp = anisodiff(s,num_iter,delta_t,kappa,option);
+    inp = uint8(inp);
+    
+inp=imresize(inp,[256,256]);
+if size(inp,3)>1
+    inp=rgb2gray(inp);
+end
+figure;
+imshow(inp);
+title('Filtered image','FontSize',20);
+
+%% thresholding
+sout=imresize(inp,[256,256]);
+t0=mean(s(:));
+th=t0+((max(inp(:))+min(inp(:)))./2);
+for i=1:1:size(inp,1)
+    for j=1:1:size(inp,2)
+        if inp(i,j)>th
+            sout(i,j)=1;
+        else
+            sout(i,j)=0;
+        end
+    end
+end
+
+%% Morphological Operation
+
+label=bwlabel(sout);
+stats=regionprops(logical(sout),'Solidity','Area','BoundingBox');
+density=[stats.Solidity];
+area=[stats.Area];
+high_dense_area=density>0.7;
+max_area=max(area(high_dense_area));
+tumor_label=find(area==max_area);
+tumor=ismember(label,tumor_label);
+
+if max_area>200
+   figure;
+   imshow(tumor)
+   title('tumor alone','FontSize',20);
+else
+    h = msgbox('No Tumor!!','status');
+    %disp('no tumor');
+    return;
+end
+            
+%% Bounding box
+box = stats(tumor_label);
+wantedBox = box.BoundingBox;
+figure
+imshow(inp);
+title('Bounding Box','FontSize',20);
+hold on;
+rectangle('Position',wantedBox,'EdgeColor','y');
+hold off;
+
+%% Getting Tumor Outline - image filling, eroding, subtracting
+% erosion the walls by a few pixels
+dilationAmount = 5;
+rad = floor(dilationAmount);
+[r,c] = size(tumor);
+filledImage = imfill(tumor, 'holes');
+
+for i=1:r
+   for j=1:c
+       x1=i-rad;
+       x2=i+rad;
+       y1=j-rad;
+       y2=j+rad;
+       if x1<1
+           x1=1;
+       end
+       if x2>r
+           x2=r;
+       end
+       if y1<1
+           y1=1;
+       end
+       if y2>c
+           y2=c;
+       end
+       erodedImage(i,j) = min(min(filledImage(x1:x2,y1:y2)));
+   end
+end
+figure
+imshow(erodedImage);
+title('eroded image','FontSize',20);
+
+%% subtracting eroded image from original BW image
+tumorOutline=tumor;
+tumorOutline(erodedImage)=0;
+figure;  
+imshow(tumorOutline);
+title('Tumor Outline','FontSize',20);
+
+%% Inserting the outline in filtered image in red color
+rgb = inp(:,:,[1 1 1]);
+red = rgb(:,:,1);
+red(tumorOutline)=255;
+green = rgb(:,:,2);
+green(tumorOutline)=0;
+blue = rgb(:,:,3);
+blue(tumorOutline)=0;
+tumorOutlineInserted(:,:,1) = red; 
+tumorOutlineInserted(:,:,2) = green; 
+tumorOutlineInserted(:,:,3) = blue; 
+
+figure
+imshow(tumorOutlineInserted);
+title('Detected Tumer','FontSize',20);
+
+%% Display Together
+figure
+subplot(231);imshow(s);title('Input image','FontSize',20);
+subplot(232);imshow(inp);title('Filtered image','FontSize',20);
+
+subplot(233);imshow(inp);title('Bounding Box','FontSize',20);
+hold on;rectangle('Position',wantedBox,'EdgeColor','y');hold off;
+
+subplot(234);imshow(tumor);title('tumor alone','FontSize',20);
+subplot(235);imshow(tumorOutline);title('Tumor Outline','FontSize',20);
+subplot(236);imshow(tumorOutlineInserted);title('Detected Tumor','FontSize',20);
+        end
+
+        % Button pushed function: InputImageButton
+        function InputImageButtonPushed(app, event)
+            [file, path] = uigetfile({'.jpg;.jpeg;.png;.gif', 'Image Files (*.jpg, *.jpeg, *.png, *.gif)'}, 'Select MRI Image');
+
+% Check if the user clicked cancel
+if isequal(file, 0)
+    disp('User clicked Cancel');
+    return;
+end
+
+% Read the selected image
+imagePath = fullfile(path, file);
+mriImage = imread(imagePath);
+
+% Display the selected MRI image
+figure;
+subplot(1, 3, 1);
+imshow(mriImage);
+title('Selected MRI Image');
+
+% Convert image to grayscale if needed
+if size(mriImage, 3) == 3
+    mriImageGray = rgb2gray(mriImage);
+else
+    mriImageGray = mriImage;
+end
+
+% Resize image to match input size of the CNN
+inputSize = [256, 256]; % Example input size
+resizedImage = imresize(mriImageGray, inputSize);
+% Define CNN architecture
+layers = [
+    imageInputLayer(inputSize)
+    convolution2dLayer(3, 16, 'Padding', 'same')
+    reluLayer
+    maxPooling2dLayer(2, 'Stride', 2)
+    convolution2dLayer(3, 32, 'Padding', 'same')
+    reluLayer
+    maxPooling2dLayer(2, 'Stride', 2)
+    fullyConnectedLayer(2)
+    softmaxLayer
+    classificationLayer];
+
+% Train the CNN (example code, replace with your actual training code)
+% Assuming binary classification (tumor, non-tumor)
+numEpochs = 10;
+miniBatchSize = 10;
+options = trainingOptions('sgdm', ...
+    'MaxEpochs', numEpochs, ...
+    'MiniBatchSize', miniBatchSize, ...
+    'Plots', 'training-progress');
+
+% Generate dummy labels (replace with actual labels)
+labels = randi([1, 2], [1, size(resizedImage, 4)]); % Example labels
+labels = categorical(labels, [1, 2], {'Tumor', 'Non-tumor'});
+
+% Train the network
+net = trainNetwork(resizedImage, labels, layers, options);
+
+% Perform inference on the MRI image
+predictedLabels = classify(net, resizedImage);
+
+% Perform MKKM clustering
+% MKKM clustering code goes here (replace with your implementation)
+
+% Display the result
+subplot(1, 3, 2);
+imshow(mriImage);
+if predictedLabels == 'Tumor'
+    title('Tumor Detected (CNN)');
+else
+    title('NO Tumor Detected (CNN)');
+end
+        end
+        % Button pushed function: ComparitiveAnalysisButton
+        function ComparitiveAnalysisButtonPushed(app, event)
+            % Sample data (replace this with your actual data)
+
+% Other parameters (replace these with your actual data)
+parameter1_model1 = 0.9755;
+parameter1_model2 = 0.974;
+parameter1_model3 = 0.9401;
+parameter2_model1 = 0.9922;
+parameter2_model2 = 0.9941;
+parameter2_model3 = 0.9601;
+
+% Plotting
+figure;
+subplot(2,1,1);
+bar([parameter1_model1, parameter1_model2, parameter1_model3; parameter2_model1, parameter2_model2, parameter2_model3]);
+ylabel('Parameter Value');
+xticklabels({'CNN-MKKMC', 'CNN-SVM'});
+legend({'Accuracy', 'Specificity', 'Sensitivity'}, 'Location', 'best');
+title('Comparison of Accuracy,Specificity and Sensitivity');
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Get the file path for locating images
+            pathToMLAPP = fileparts(mfilename('fullpath'));
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 640 480];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create TabGroup
+            app.TabGroup = uitabgroup(app.UIFigure);
+            app.TabGroup.Position = [-30 0 671 481];
+
+            % Create Tab
+            app.Tab = uitab(app.TabGroup);
+            app.Tab.Title = 'Tab';
+
+            % Create Image
+            app.Image = uiimage(app.Tab);
+            app.Image.VerticalAlignment = 'top';
+            app.Image.Position = [-72 2 837 456];
+            app.Image.ImageSource = fullfile(pathToMLAPP, 'WhatsApp Image 2024-03-14 at 9.40.51 PM.jpeg');
+
+            % Create JERUSALEMCOLLEGEOFENGNEERINGLabel
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel = uilabel(app.Tab);
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel.FontName = 'Bodoni MT';
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel.FontSize = 20;
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel.FontWeight = 'bold';
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel.Position = [271 283 451 43];
+            app.JERUSALEMCOLLEGEOFENGNEERINGLabel.Text = 'JERUSALEM COLLEGE OF ENGNEERING';
+
+            % Create COMPUTERSCIENCEANDENGINEERINGLabel
+            app.COMPUTERSCIENCEANDENGINEERINGLabel = uilabel(app.Tab);
+            app.COMPUTERSCIENCEANDENGINEERINGLabel.FontName = 'Bodoni MT';
+            app.COMPUTERSCIENCEANDENGINEERINGLabel.FontSize = 14;
+            app.COMPUTERSCIENCEANDENGINEERINGLabel.FontWeight = 'bold';
+            app.COMPUTERSCIENCEANDENGINEERINGLabel.Position = [371 245 329 39];
+            app.COMPUTERSCIENCEANDENGINEERINGLabel.Text = 'COMPUTER SCIENCE AND ENGINEERING';
+
+            % Create BRAINTUMOURDETECTIONANDANALYSISLabel
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel = uilabel(app.Tab);
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel.FontName = 'Bodoni MT';
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel.FontSize = 22;
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel.FontWeight = 'bold';
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel.Position = [189 325 542 60];
+            app.BRAINTUMOURDETECTIONANDANALYSISLabel.Text = 'BRAIN TUMOUR DETECTION AND ANALYSIS';
+
+            % Create DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel = uilabel(app.Tab);
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel.FontName = 'Bodoni MT';
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel.FontSize = 19;
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel.FontWeight = 'bold';
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel.Position = [389 30 201 133];
+            app.DONEBYSWETHAJPVARSHAPVASUMATHIKKLabel.Text = {'DONE BY:'; 'SWETHA JP'; 'VARSHA P'; 'VASUMATHI KK'};
+
+            % Create CNNANDSVMTab
+            app.CNNANDSVMTab = uitab(app.TabGroup);
+            app.CNNANDSVMTab.Title = 'CNN AND SVM';
+
+            % Create Image2
+            app.Image2 = uiimage(app.CNNANDSVMTab);
+            app.Image2.Position = [-138 1 947 457];
+            app.Image2.ImageSource = fullfile(pathToMLAPP, 'WhatsApp Image 2024-03-14 at 9.39.05 PM.jpeg');
+
+            % Create BRAINTUMORDETECTIONUSINGCNNANDSVMLabel
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel = uilabel(app.CNNANDSVMTab);
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.FontName = 'Bodoni MT';
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.FontSize = 24;
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.FontWeight = 'bold';
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.FontColor = [1 1 1];
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.Position = [78 384 818 52];
+            app.BRAINTUMORDETECTIONUSINGCNNANDSVMLabel.Text = 'BRAIN TUMOR DETECTION USING CNN AND SVM';
+
+            % Create INPUTIMAGEButton
+            app.INPUTIMAGEButton = uibutton(app.CNNANDSVMTab, 'push');
+            app.INPUTIMAGEButton.ButtonPushedFcn = createCallbackFcn(app, @INPUTIMAGEButtonPushed, true);
+            app.INPUTIMAGEButton.BackgroundColor = [0.4471 0.5098 0.5804];
+            app.INPUTIMAGEButton.FontName = 'Bodoni MT';
+            app.INPUTIMAGEButton.FontSize = 18;
+            app.INPUTIMAGEButton.FontColor = [0.8549 0.8784 0.8902];
+            app.INPUTIMAGEButton.Position = [44 49 212 47];
+            app.INPUTIMAGEButton.Text = 'INPUT IMAGE';
+
+            % Create CNNANDMKKMCTab
+            app.CNNANDMKKMCTab = uitab(app.TabGroup);
+            app.CNNANDMKKMCTab.Title = 'CNN AND MKKMC';
+
+            % Create Image3
+            app.Image3 = uiimage(app.CNNANDMKKMCTab);
+            app.Image3.Position = [10 0 660 457];
+            app.Image3.ImageSource = fullfile(pathToMLAPP, 'WhatsApp Image 2024-03-14 at 9.39.05 PM.jpeg');
+
+            % Create InputImageButton
+            app.InputImageButton = uibutton(app.CNNANDMKKMCTab, 'push');
+            app.InputImageButton.ButtonPushedFcn = createCallbackFcn(app, @InputImageButtonPushed, true);
+            app.InputImageButton.BackgroundColor = [0.451 0.5098 0.5804];
+            app.InputImageButton.FontName = 'Bodoni MT';
+            app.InputImageButton.FontSize = 18;
+            app.InputImageButton.FontWeight = 'bold';
+            app.InputImageButton.FontColor = [1 1 1];
+            app.InputImageButton.Position = [44 43 229 52];
+            app.InputImageButton.Text = 'Input Image';
+
+            % Create ComparitiveAnalysisTab
+            app.ComparitiveAnalysisTab = uitab(app.TabGroup);
+            app.ComparitiveAnalysisTab.Title = 'Comparitive Analysis';
+
+            % Create Image4
+            app.Image4 = uiimage(app.ComparitiveAnalysisTab);
+            app.Image4.Position = [0 1 671 457];
+            app.Image4.ImageSource = fullfile(pathToMLAPP, 'WhatsApp Image 2024-03-14 at 9.39.05 PM.jpeg');
+
+            % Create ComparitiveAnalysisButton
+            app.ComparitiveAnalysisButton = uibutton(app.ComparitiveAnalysisTab, 'push');
+            app.ComparitiveAnalysisButton.ButtonPushedFcn = createCallbackFcn(app, @ComparitiveAnalysisButtonPushed, true);
+            app.ComparitiveAnalysisButton.BackgroundColor = [0.451 0.5098 0.5804];
+            app.ComparitiveAnalysisButton.Position = [18 43 212 64];
+            app.ComparitiveAnalysisButton.Text = 'Comparitive Analysis';
+
+            % Create ContextMenu2
+            app.ContextMenu2 = uicontextmenu(app.UIFigure);
+
+            % Create Menu_2
+            app.Menu_2 = uimenu(app.ContextMenu2);
+            app.Menu_2.Text = 'Menu';
+
+            % Create Menu2_2
+            app.Menu2_2 = uimenu(app.ContextMenu2);
+            app.Menu2_2.Text = 'Menu2';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = app1
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
